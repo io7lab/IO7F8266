@@ -1,41 +1,40 @@
 // IBM IOT Device
-#include <ESP8266WiFi.h>
-#include <WiFiClient.h>
-#include <ESP8266WebServer.h>
-#include <PubSubClient.h>
-#include <ESP8266httpUpdate.h>
 #include <ConfigPortal8266.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266httpUpdate.h>
+#include <PubSubClient.h>
+#include <WiFiClient.h>
 
-const char          compile_date[] = __DATE__ " " __TIME__;
-char                publishTopic[200]   = "iot-2/evt/status/fmt/json";
-char                infoTopic[200]      = "iot-2/evt/info/fmt/json";
-char                commandTopic[200]   = "iot-2/cmd/+/fmt/+";
-char                responseTopic[200]  = "iotdm-1/response";
-char                manageTopic[200]    = "iotdevice-1/mgmt/manage";
-char                updateTopic[200]    = "iotdm-1/device/update";
-char                rebootTopic[200]    = "iotdm-1/mgmt/initiate/device/reboot";
-char                resetTopic[200]     = "iotdm-1/mgmt/initiate/device/factory_reset";
+const char compile_date[] = __DATE__ " " __TIME__;
+char cmdTopic[200] = "iot3/%s/cmd/+/fmt/+";
+char evtTopic[200] = "iot3/%s/evt/status/fmt/json";
+char stsTopic[200] = "iot3/%s/mgmt/device/status";
+char updateTopic[200] = "iot3/%s/mgmt/device/update";
+char rebootTopic[200] = "iot3/%s/mgmt/initiate/device/reboot";
+char resetTopic[200] = "iot3/%s/mgmt/initiate/device/factory_reset";
+char upgradeTopic[200] = "iot3/%s/mgmt/initiate/firmware/update";
 
-String              user_config_html = ""
-    "<p><input type='text' name='org' placeholder='org/edge'>"
+String user_config_html =
+    ""
+    "<p><input type='text' name='broker' placeholder='Broker'>"
     "<p><input type='text' name='devType' placeholder='Device Type'>"
     "<p><input type='text' name='devId' placeholder='Device Id'>"
     "<p><input type='text' name='token' placeholder='Device Token'>"
+    "<p><input type='text' name='fprint' placeholder='No TLS'>"
     "<p><input type='text' name='meta.pubInterval' placeholder='Publish Interval'>";
 
-extern  String      user_html;
+extern String user_html;
 
-ESP8266WebServer    server(80);
-WiFiClientSecure    wifiClientSecure;
-WiFiClient          wifiClient;
-PubSubClient        client;
-char                iot_server[100];
-char                msgBuffer[JSON_CHAR_LENGTH];
-unsigned long       pubInterval;
+ESP8266WebServer server(80);
+WiFiClientSecure wifiClientSecure;
+WiFiClient wifiClient;
+PubSubClient client;
+char iot_server[100];
+char msgBuffer[JSON_CHAR_LENGTH];
+unsigned long pubInterval;
 
-char                fpFile[] = "/fingerprint.txt";
-String              fingerprint = "B3 B7 C3 0D 9D 32 E6 A2 8A FC FD BA 11 BB 05 5E E1 D9 9E F7";
-int                 mqttPort = 8883;
+int mqttPort;
 
 bool subscribeTopic(const char* topic) {
     if (client.subscribe(topic)) {
@@ -47,81 +46,60 @@ bool subscribeTopic(const char* topic) {
     }
 }
 
-void toGatewayTopic(char* topic, const char* devType, const char* devId) {
+void setDevId(char* topic, const char* devId) {
     char buffer[200];
-    char devInfo[100];
-    sprintf(devInfo, "/type/%s/id/%s", devType, devId);
-
-    char* slash = strchr(topic, '/');
-    int len = slash - topic;
-    strncpy(buffer, topic, len);
-    strcpy(buffer + len, devInfo);
-    strcpy(buffer + strlen(buffer), slash);
+    sprintf(buffer, topic, devId);
     strcpy(topic, buffer);
 }
 
 void initDevice() {
-    user_config_html += user_html;
     loadConfig();
 
-    if(!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
+    if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
+        JsonObject meta = cfg["meta"];
+        if (meta.containsKey("fprint")) {
+            user_config_html.replace(user_config_html.find("No TLS"), 6, (const char*)meta["fprint"]);
+        }
+        user_config_html += user_html;
         configDevice();
         // the device will be configured and rebooted in the configDevice()
     }
 
-    String org = cfg["org"];
-    if (org.indexOf(".") == -1) {
-        if (LittleFS.exists(fpFile)) {
-            File f = LittleFS.open(fpFile, "r");
-            fingerprint = f.readString();
-            fingerprint.trim();
-            f.close();
-        }
-        wifiClientSecure.setFingerprint(fingerprint.c_str());
+    const char* devId = (const char*)cfg["devId"];
+    setDevId(evtTopic, devType, devId);
+    setDevId(stsTopic, devType, devId);
+    setDevId(cmdTopic, devType, devId);
+    setDevId(updateTopic, devType, devId);
+    setDevId(rebootTopic, devType, devId);
+    setDevId(resetTopic, devType, devId);
+    setDevId(upgradeTopic, devType, devId);
+    sprintf(iot_server, "%s", (const char*)cfg["broker"]);
+    JsonObject meta = cfg["meta"];
+    if (meta.contains("fprint")) {  // TODO : needs to check the size
+        wifiClientSecure.setFingerprint((const char*)cfg["fprint"]);
         client.setClient(wifiClientSecure);
-        sprintf(iot_server, "%s.messaging.internetofthings.ibmcloud.com", (const char*)cfg["org"]);
+        mqttPort = 8883;
     } else {
-        const char* devType = (const char*)cfg["devType"];
-        const char* devId = (const char*)cfg["devId"];
-        toGatewayTopic(publishTopic, devType, devId);
-        toGatewayTopic(infoTopic, devType, devId);
-        toGatewayTopic(commandTopic, devType, devId);
-        toGatewayTopic(responseTopic, devType, devId);
-        toGatewayTopic(manageTopic, devType, devId);
-        toGatewayTopic(updateTopic, devType, devId);
-        toGatewayTopic(rebootTopic, devType, devId);
-        toGatewayTopic(resetTopic, devType, devId);
-
         client.setClient(wifiClient);
-        sprintf(iot_server, "%s", (const char*)cfg["org"]);
         mqttPort = 1883;
     }
 }
 
 void iot_connect() {
-
     while (!client.connected()) {
         int mqConnected = 0;
-        if(mqttPort == 8883) {
-            sprintf(msgBuffer,"d:%s:%s:%s", (const char*)cfg["org"], (const char*)cfg["devType"], (const char*)cfg["devId"]);
-            mqConnected = client.connect(msgBuffer,"use-token-auth",cfg["token"]);
-        } else {
-            sprintf(msgBuffer,"d:%s:%s", (const char*)cfg["devType"], (const char*)cfg["devId"]);
-            mqConnected = client.connect(msgBuffer);
-        }
+        mqConnected = client.connect((const char*)cfg["devId"],
+                                     (const char*)cfg["devId"],
+                                     (const char*)cfg["token"]);
         if (mqConnected) {
             Serial.println("MQ connected");
         } else {
-            if( digitalRead(RESET_PIN) == 0 ) {
+            if (digitalRead(RESET_PIN) == 0) {
                 reboot();
             }
-            if(WiFi.status() == WL_CONNECTED) {
-                if(client.state() == -2) {
-                    if (mqttPort == 8883) {
-                        wifiClientSecure.connect(iot_server, mqttPort);
-                    } else {
-                        wifiClient.connect(iot_server, mqttPort);
-                    }
+            if (WiFi.status() == WL_CONNECTED) {
+                if (client.state() == -2) {
+                    set_iot_server();
                 } else {
                     Serial.printf("MQ Connection fail RC = %d, try again in 5 seconds\n", client.state());
                 }
@@ -134,36 +112,32 @@ void iot_connect() {
                 while (WiFi.status() != WL_CONNECTED) {
                     Serial.print("*");
                     delay(5000);
-                    if(i++ > 10) reboot();
+                    if (i++ > 10) reboot();
                 }
             }
         }
     }
-    if (!subscribeTopic(responseTopic)) return;
     if (!subscribeTopic(rebootTopic)) return;
     if (!subscribeTopic(resetTopic)) return;
     if (!subscribeTopic(updateTopic)) return;
-    if (!subscribeTopic(commandTopic)) return;
+    if (!subscribeTopic(upgradeTopic)) return;
+    if (!subscribeTopic(cmdTopic)) return;
     JsonObject meta = cfg["meta"];
     StaticJsonDocument<512> root;
     JsonObject d = root.createNestedObject("d");
     JsonObject metadata = d.createNestedObject("metadata");
-    for (JsonObject::iterator it=meta.begin(); it!=meta.end(); ++it) {
+    for (JsonObject::iterator it = meta.begin(); it != meta.end(); ++it) {
         metadata[it->key().c_str()] = it->value();
     }
     JsonObject supports = d.createNestedObject("supports");
     supports["deviceActions"] = true;
     serializeJson(root, msgBuffer);
     Serial.printf("publishing device metadata: %s\n", msgBuffer);
-    if (client.publish(manageTopic, msgBuffer)) {
-        serializeJson(d, msgBuffer);
-        String info = String("{\"info\":") + String(msgBuffer) + String("}");
-        client.publish(infoTopic, info.c_str());
-    }
+    client.publish(stsTopic, msgBuffer);
 }
 
 void set_iot_server() {
-    if(mqttPort == 8883) {
+    if (mqttPort == 8883) {
         if (!wifiClientSecure.connect(iot_server, mqttPort)) {
             Serial.println("ssl connection failed");
             return;
@@ -174,15 +148,7 @@ void set_iot_server() {
             return;
         }
     }
-    client.setServer(iot_server, mqttPort);   //IOT
-    iot_connect();
-}
-
-void publishError(char *msg) {
-    String payload = "{\"info\":{\"error\":";
-    payload += "\"" + String(msg) + "\"}}";
-    client.publish(infoTopic, (char*) payload.c_str());
-    Serial.println(payload);
+    client.setServer(iot_server, mqttPort);  // IOT
 }
 
 void update_progress(int cur, int total) {
@@ -196,77 +162,75 @@ void update_error(int err) {
 void handleIOTCommand(char* topic, JsonDocument* root) {
     JsonObject d = (*root)["d"];
 
-    if (strstr(topic, "/response")) {
-        return;                                 // just print of response for now
-    } else if (strstr(topic, "/device/reboot")) {   // rebooting
+    if (strstr(topic, rebootTopic)) {  // rebooting
         reboot();
-    } else if (strstr(topic, "/device/factory_reset")) {    // clear the configuration and reboot
+    } else if (strstr(topic, resetTopic)) {  // clear the configuration and reboot
         reset_config();
         ESP.restart();
-    } else if (strstr(topic, "/device/update")) {
+    } else if (strstr(topic, updateTopic)) {
         JsonArray fields = d["fields"];
-        for(JsonArray::iterator it=fields.begin(); it!=fields.end(); ++it) {
+        for (JsonArray::iterator it = fields.begin(); it != fields.end(); ++it) {
             DynamicJsonDocument field = *it;
             const char* fieldName = field["field"];
             if (strstr(fieldName, "metadata")) {
                 JsonObject fieldValue = field["value"];
                 cfg.remove("meta");
                 JsonObject meta = cfg.createNestedObject("meta");
-                for (JsonObject::iterator fv=fieldValue.begin(); fv!=fieldValue.end(); ++fv) {
+                for (JsonObject::iterator fv = fieldValue.begin(); fv != fieldValue.end(); ++fv) {
                     meta[(char*)fv->key().c_str()] = fv->value();
                 }
                 save_config_json();
             }
         }
         pubInterval = cfg["meta"]["pubInterval"];
-    } else if (strstr(topic, "/cmd/")) {
-        if (d.containsKey("upgrade")) {
-            JsonObject upgrade = d["upgrade"];
-            String response = "{\"OTA\":{\"status\":";
-            if(upgrade.containsKey("server") && 
-                        upgrade.containsKey("port") && 
-                        upgrade.containsKey("uri")) {
-		        Serial.println("firmware upgrading");
-	            const char *fw_server = upgrade["server"];
-	            int fw_server_port = atoi(upgrade["port"]);
-	            const char *fw_uri = upgrade["uri"];
-                ESPhttpUpdate.onProgress(update_progress);
-                ESPhttpUpdate.onError(update_error);
-                client.publish(infoTopic,"{\"info\":{\"upgrade\":\"Device will be upgraded.\"}}" );
-	            t_httpUpdate_return ret = ESPhttpUpdate.update(wifiClient, fw_server, fw_server_port, fw_uri);
-	            switch(ret) {
-		            case HTTP_UPDATE_FAILED:
-                        response += "\"[update] Update failed. http://" + String(fw_server);
-                        response += ":"+ String(fw_server_port) + String(fw_uri) +"\"}}";
-                        client.publish(infoTopic, (char*) response.c_str());
-                        Serial.println(response);
-		                break;
-		            case HTTP_UPDATE_NO_UPDATES:
-                        response += "\"[update] Update no Update.\"}}";
-                        client.publish(infoTopic, (char*) response.c_str());
-                        Serial.println(response);
-		                break;
-		            case HTTP_UPDATE_OK:
-		                Serial.println("[update] Update ok."); // may not called we reboot the ESP
-		                break;
-	            }
-            } else {
-                response += "\"OTA Information Error\"}}";
-                client.publish(infoTopic, (char*) response.c_str());
-                Serial.println(response);
+    } else if (strstr(topic, upgradeTopic)) {
+        JsonObject upgrade = d["upgrade"];
+        String response = "{\"OTA\":{\"status\":";
+        if (upgrade.containsKey("server") &&
+            upgrade.containsKey("port") &&
+            upgrade.containsKey("uri")) {
+            Serial.println("firmware upgrading");
+            const char* fw_server = upgrade["server"];
+            int fw_server_port = atoi(upgrade["port"]);
+            const char* fw_uri = upgrade["uri"];
+            ESPhttpUpdate.onProgress(update_progress);
+            ESPhttpUpdate.onError(update_error);
+            client.publish(stsTopic, "{\"info\":{\"upgrade\":\"Device will be upgraded.\"}}");
+            t_httpUpdate_return ret = ESPhttpUpdate.update(wifiClient, fw_server, fw_server_port, fw_uri);
+            switch (ret) {
+                case HTTP_UPDATE_FAILED:
+                    response += "\"[update] Update failed. http://" + String(fw_server);
+                    response += ":" + String(fw_server_port) + String(fw_uri) + "\"}}";
+                    client.publish(stsTopic, (char*)response.c_str());
+                    Serial.println(response);
+                    break;
+                case HTTP_UPDATE_NO_UPDATES:
+                    response += "\"[update] Update no Update.\"}}";
+                    client.publish(stsTopic, (char*)response.c_str());
+                    Serial.println(response);
+                    break;
+                case HTTP_UPDATE_OK:
+                    Serial.println("[update] Update ok.");  // may not called we reboot the ESP
+                    break;
             }
-        } else if (d.containsKey("config")) {
+        } else {
+            response += "\"OTA Information Error\"}}";
+            client.publish(stsTopic, (char*)response.c_str());
+            Serial.println(response);
+        }
+    } else if (strstr(topic, cmdTopic)) {
+        if (d.containsKey("config")) {
             char maskBuffer[JSON_CHAR_LENGTH];
             cfg["compile_date"] = compile_date;
             maskConfig(maskBuffer);
             cfg.remove("compile_date");
             String info = String("{\"config\":") + String(maskBuffer) + String("}");
-            client.publish(infoTopic, info.c_str());
+            client.publish(stsTopic, info.c_str());
         }
     }
 }
-/* FW Upgrade informaiton 
- * var evt1 = { 'd': { 
+/* FW Upgrade informaiton
+ * var evt1 = { 'd': {
  *   'upgrade' : {
  *       'server':'192.168.0.9',
  *       'port':'3000',
@@ -274,4 +238,4 @@ void handleIOTCommand(char* topic, JsonDocument* root) {
  *       }
  *   }
  * };
-*/
+ */
