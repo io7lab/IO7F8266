@@ -18,7 +18,6 @@ char upgradeTopic[200] = "iot3/%s/mgmt/initiate/firmware/update";
 String user_config_html =
     ""
     "<p><input type='text' name='broker' placeholder='Broker'>"
-    "<p><input type='text' name='devType' placeholder='Device Type'>"
     "<p><input type='text' name='devId' placeholder='Device Id'>"
     "<p><input type='text' name='token' placeholder='Device Token'>"
     "<p><input type='text' name='fprint' placeholder='No TLS'>"
@@ -66,16 +65,16 @@ void initDevice() {
     }
 
     const char* devId = (const char*)cfg["devId"];
-    setDevId(evtTopic, devType, devId);
-    setDevId(stsTopic, devType, devId);
-    setDevId(cmdTopic, devType, devId);
-    setDevId(updateTopic, devType, devId);
-    setDevId(rebootTopic, devType, devId);
-    setDevId(resetTopic, devType, devId);
-    setDevId(upgradeTopic, devType, devId);
+    setDevId(evtTopic, devId);
+    setDevId(stsTopic, devId);
+    setDevId(cmdTopic, devId);
+    setDevId(updateTopic, devId);
+    setDevId(rebootTopic, devId);
+    setDevId(resetTopic, devId);
+    setDevId(upgradeTopic, devId);
     sprintf(iot_server, "%s", (const char*)cfg["broker"]);
     JsonObject meta = cfg["meta"];
-    if (meta.contains("fprint")) {  // TODO : needs to check the size
+    if (meta.containsKey("fprint")) {  // TODO : needs to check the size
         wifiClientSecure.setFingerprint((const char*)cfg["fprint"]);
         client.setClient(wifiClientSecure);
         mqttPort = 8883;
