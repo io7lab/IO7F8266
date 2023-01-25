@@ -57,7 +57,7 @@ void initDevice() {
     if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
         JsonObject meta = cfg["meta"];
         if (meta.containsKey("fprint")) {
-            user_config_html.replace(user_config_html.find("No TLS"), 6, (const char*)meta["fprint"]);
+            user_config_html.replace("No TLS", (const char*)meta["fprint"]);
         }
         user_config_html += user_html;
         configDevice();
@@ -82,6 +82,21 @@ void initDevice() {
         client.setClient(wifiClient);
         mqttPort = 1883;
     }
+}
+
+void set_iot_server() {
+    if (mqttPort == 8883) {
+        if (!wifiClientSecure.connect(iot_server, mqttPort)) {
+            Serial.println("ssl connection failed");
+            return;
+        }
+    } else {
+        if (!wifiClient.connect(iot_server, mqttPort)) {
+            Serial.println("connection failed");
+            return;
+        }
+    }
+    client.setServer(iot_server, mqttPort);  // IOT
 }
 
 void iot_connect() {
@@ -133,21 +148,6 @@ void iot_connect() {
     serializeJson(root, msgBuffer);
     Serial.printf("publishing device metadata: %s\n", msgBuffer);
     client.publish(stsTopic, msgBuffer);
-}
-
-void set_iot_server() {
-    if (mqttPort == 8883) {
-        if (!wifiClientSecure.connect(iot_server, mqttPort)) {
-            Serial.println("ssl connection failed");
-            return;
-        }
-    } else {
-        if (!wifiClient.connect(iot_server, mqttPort)) {
-            Serial.println("connection failed");
-            return;
-        }
-    }
-    client.setServer(iot_server, mqttPort);  // IOT
 }
 
 void update_progress(int cur, int total) {
@@ -217,7 +217,7 @@ void handleIOTCommand(char* topic, JsonDocument* root) {
             client.publish(stsTopic, (char*)response.c_str());
             Serial.println(response);
         }
-    } else if (strstr(topic, cmdTopic)) {
+    } else if (strstr(topic, "/cmd/")) {
         if (d.containsKey("config")) {
             char maskBuffer[JSON_CHAR_LENGTH];
             cfg["compile_date"] = compile_date;

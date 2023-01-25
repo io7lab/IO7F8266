@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <IBMIOTF8266.h>
+#include <IO7F8266.h>
 
 String user_html =
     ""
@@ -74,7 +74,7 @@ void setup() {
     initDevice();
     // USER CODE EXAMPLE : meta data to local variable
     JsonObject meta = cfg["meta"];
-    pubInterval = meta.containsKey("pubInterval") ? atoi((const char*)meta["pubInterval"]) : 0;
+    pubInterval = meta.containsKey("pubInterval") ? meta["pubInterval"] : 0;
     lastPublishMillis = -pubInterval;
     // USER CODE EXAMPLE
 
