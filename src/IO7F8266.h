@@ -7,33 +7,33 @@
 #include <WiFiClient.h>
 
 const char compile_date[] = __DATE__ " " __TIME__;
-char cmdTopic[200] = "iot3/%s/cmd/+/fmt/+";
-char evtTopic[200] = "iot3/%s/evt/status/fmt/json";
-char stsTopic[200] = "iot3/%s/mgmt/device/status";
-char updateTopic[200] = "iot3/%s/mgmt/device/update";
-char rebootTopic[200] = "iot3/%s/mgmt/initiate/device/reboot";
-char resetTopic[200] = "iot3/%s/mgmt/initiate/device/factory_reset";
-char upgradeTopic[200] = "iot3/%s/mgmt/initiate/firmware/update";
+char cmdTopic[200]      = "iot3/%s/cmd/+/fmt/+";
+char evtTopic[200]      = "iot3/%s/evt/status/fmt/json";
+char stsTopic[200]      = "iot3/%s/mgmt/device/status";
+char updateTopic[200]   = "iot3/%s/mgmt/device/update";
+char rebootTopic[200]   = "iot3/%s/mgmt/initiate/device/reboot";
+char resetTopic[200]    = "iot3/%s/mgmt/initiate/device/factory_reset";
+char upgradeTopic[200]  = "iot3/%s/mgmt/initiate/firmware/update";
 
 String user_config_html =
     ""
     "<p><input type='text' name='broker' placeholder='Broker'>"
     "<p><input type='text' name='devId' placeholder='Device Id'>"
     "<p><input type='text' name='token' placeholder='Device Token'>"
-    "<p><input type='text' name='fprint' placeholder='No TLS'>"
+    "<p><input type='text' name='fingerprint' placeholder='No TLS' value='%s'>"
     "<p><input type='text' name='meta.pubInterval' placeholder='Publish Interval'>";
 
-extern String user_html;
+extern String       user_html;
 
-ESP8266WebServer server(80);
-WiFiClientSecure wifiClientSecure;
-WiFiClient wifiClient;
-PubSubClient client;
-char iot_server[100];
-char msgBuffer[JSON_CHAR_LENGTH];
-unsigned long pubInterval;
-
-int mqttPort;
+ESP8266WebServer    server(80);
+WiFiClientSecure    wifiClientSecure;
+WiFiClient          wifiClient;
+PubSubClient        client;
+char                iot_server[100];
+char                msgBuffer[JSON_CHAR_LENGTH];
+unsigned long       pubInterval;
+int                 mqttPort;
+char                fpFile[] = "/fingerprint.txt";
 
 bool subscribeTopic(const char* topic) {
     if (client.subscribe(topic)) {
@@ -53,34 +53,47 @@ void setDevId(char* topic, const char* devId) {
 
 void initDevice() {
     loadConfig();
-
-    if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
-        JsonObject meta = cfg["meta"];
-        if (meta.containsKey("fprint")) {
-            user_config_html.replace("No TLS", (const char*)meta["fprint"]);
+    String fingerprint;
+    if (cfg.containsKey("fingerprint")) {
+        fingerprint = (const char*)cfg["fingerprint"];
+        fingerprint.trim();
+        cfg.remove("fingerprint");
+        save_config_json();
+        File f = LittleFS.open(fpFile, "w");
+        f.write(fingerprint.c_str());
+        f.close();
+    } else {
+        if (LittleFS.exists(fpFile)) {
+            File f = LittleFS.open(fpFile, "r");
+            fingerprint = f.readString();
+            fingerprint.trim();
+            f.close();
         }
-        user_config_html += user_html;
-        configDevice();
-        // the device will be configured and rebooted in the configDevice()
     }
 
-    const char* devId = (const char*)cfg["devId"];
-    setDevId(evtTopic, devId);
-    setDevId(stsTopic, devId);
-    setDevId(cmdTopic, devId);
-    setDevId(updateTopic, devId);
-    setDevId(rebootTopic, devId);
-    setDevId(resetTopic, devId);
-    setDevId(upgradeTopic, devId);
-    sprintf(iot_server, "%s", (const char*)cfg["broker"]);
-    JsonObject meta = cfg["meta"];
-    if (meta.containsKey("fprint")) {  // TODO : needs to check the size
-        wifiClientSecure.setFingerprint((const char*)cfg["fprint"]);
-        client.setClient(wifiClientSecure);
-        mqttPort = 8883;
+    if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
+        char buf[1000];
+        sprintf(buf, user_config_html.c_str(), fingerprint.c_str());
+        user_config_html = buf + user_html;
+        configDevice();
     } else {
-        client.setClient(wifiClient);
-        mqttPort = 1883;
+        const char* devId = (const char*)cfg["devId"];
+        setDevId(evtTopic, devId);
+        setDevId(stsTopic, devId);
+        setDevId(cmdTopic, devId);
+        setDevId(updateTopic, devId);
+        setDevId(rebootTopic, devId);
+        setDevId(resetTopic, devId);
+        setDevId(upgradeTopic, devId);
+        sprintf(iot_server, "%s", (const char*)cfg["broker"]);
+        if (fingerprint.length() > 0) {
+            wifiClientSecure.setFingerprint(fingerprint.c_str());
+            client.setClient(wifiClientSecure);
+            mqttPort = 8883;
+        } else {
+            client.setClient(wifiClient);
+            mqttPort = 1883;
+        }
     }
 }
 
@@ -233,7 +246,7 @@ void handleIOTCommand(char* topic, JsonDocument* root) {
  *   'upgrade' : {
  *       'server':'192.168.0.9',
  *       'port':'3000',
- *       'uri' : '/file/IOTPurifier4GW.ino.nodemcu.bin'
+ *       'uri' : '/file/firmware.bin'
  *       }
  *   }
  * };
