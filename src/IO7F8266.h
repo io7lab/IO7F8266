@@ -9,7 +9,9 @@
 const char compile_date[] = __DATE__ " " __TIME__;
 char cmdTopic[200]      = "iot3/%s/cmd/+/fmt/+";
 char evtTopic[200]      = "iot3/%s/evt/status/fmt/json";
-char stsTopic[200]      = "iot3/%s/mgmt/device/status";
+char connTopic[200]     = "iot3/%s/evt/connection/fmt/json";
+char logTopic[200]      = "iot3/%s/mgmt/device/status";
+char metaTopic[200]     = "iot3/%s/mgmt/device/meta";
 char updateTopic[200]   = "iot3/%s/mgmt/device/update";
 char rebootTopic[200]   = "iot3/%s/mgmt/initiate/device/reboot";
 char resetTopic[200]    = "iot3/%s/mgmt/initiate/device/factory_reset";
@@ -79,7 +81,9 @@ void initDevice() {
     } else {
         const char* devId = (const char*)cfg["devId"];
         setDevId(evtTopic, devId);
-        setDevId(stsTopic, devId);
+        setDevId(logTopic, devId);
+        setDevId(connTopic, devId);
+        setDevId(metaTopic, devId);
         setDevId(cmdTopic, devId);
         setDevId(updateTopic, devId);
         setDevId(rebootTopic, devId);
@@ -117,7 +121,12 @@ void iot_connect() {
         int mqConnected = 0;
         mqConnected = client.connect((const char*)cfg["devId"],
                                      (const char*)cfg["devId"],
-                                     (const char*)cfg["token"]);
+                                     (const char*)cfg["token"],
+                                     connTopic,
+                                     0,
+                                     true,
+                                     "{\"status\":\"offline\"}",
+                                     true);
         if (mqConnected) {
             Serial.println("MQ connected");
         } else {
@@ -160,7 +169,8 @@ void iot_connect() {
     supports["deviceActions"] = true;
     serializeJson(root, msgBuffer);
     Serial.printf("publishing device metadata: %s\n", msgBuffer);
-    client.publish(stsTopic, msgBuffer);
+    client.publish(metaTopic, msgBuffer, true);
+    client.publish(connTopic, "{\"status\":\"online\"}", true);
 }
 
 void update_progress(int cur, int total) {
@@ -207,18 +217,18 @@ void handleIOTCommand(char* topic, JsonDocument* root) {
             const char* fw_uri = upgrade["uri"];
             ESPhttpUpdate.onProgress(update_progress);
             ESPhttpUpdate.onError(update_error);
-            client.publish(stsTopic, "{\"info\":{\"upgrade\":\"Device will be upgraded.\"}}");
+            client.publish(logTopic, "{\"info\":{\"upgrade\":\"Device will be upgraded.\"}}");
             t_httpUpdate_return ret = ESPhttpUpdate.update(wifiClient, fw_server, fw_server_port, fw_uri);
             switch (ret) {
                 case HTTP_UPDATE_FAILED:
                     response += "\"[update] Update failed. http://" + String(fw_server);
                     response += ":" + String(fw_server_port) + String(fw_uri) + "\"}}";
-                    client.publish(stsTopic, (char*)response.c_str());
+                    client.publish(logTopic, (char*)response.c_str());
                     Serial.println(response);
                     break;
                 case HTTP_UPDATE_NO_UPDATES:
                     response += "\"[update] Update no Update.\"}}";
-                    client.publish(stsTopic, (char*)response.c_str());
+                    client.publish(logTopic, (char*)response.c_str());
                     Serial.println(response);
                     break;
                 case HTTP_UPDATE_OK:
@@ -227,7 +237,7 @@ void handleIOTCommand(char* topic, JsonDocument* root) {
             }
         } else {
             response += "\"OTA Information Error\"}}";
-            client.publish(stsTopic, (char*)response.c_str());
+            client.publish(logTopic, (char*)response.c_str());
             Serial.println(response);
         }
     } else if (strstr(topic, "/cmd/")) {
@@ -237,7 +247,7 @@ void handleIOTCommand(char* topic, JsonDocument* root) {
             maskConfig(maskBuffer);
             cfg.remove("compile_date");
             String info = String("{\"config\":") + String(maskBuffer) + String("}");
-            client.publish(stsTopic, info.c_str());
+            client.publish(logTopic, info.c_str());
         }
     }
 }
