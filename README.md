@@ -1,6 +1,6 @@
-# IO7 IOT Foundation for ESP8266
+# IO7 Foundation for ESP8266
 
-With this library, the developer can create an ESP8266 IO7 IOT device which
+With this library, the developer can create an IO7 ESP8266 IOT device which
 1. helps configure with the Captive Portal if not configured as in the following picture,
 2. or boots with the stored configuration if configured already,
 3. connects to the WiFi/IO7 IOT Platform and run the loop function
