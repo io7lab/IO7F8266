@@ -5,7 +5,7 @@ With this library, the developer can create an ESP8266 IBM IOT device which
 2. or boots with the stored configuration if configured already,
 3. connects to the WiFi/IBM IOT Foundation and run the loop function
 
-![IOT Device Setup Captive Portal](https://user-images.githubusercontent.com/13171662/150662713-58af1cfc-be48-457b-828a-d9c1afe0c561.jpg)
+![Untitled](https://user-images.githubusercontent.com/13171662/221724691-8d1c93be-c4d2-4ad9-8bcf-24bda369efe4.jpg)
 
 # How to use the IBMIOTF8266
 You can create a PlatformIO project with the example directory and modify the src/main.cpp for your purpose and build it.
