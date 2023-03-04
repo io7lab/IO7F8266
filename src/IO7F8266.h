@@ -125,7 +125,7 @@ void iot_connect() {
                                      connTopic,
                                      0,
                                      true,
-                                     "{\"status\":\"offline\"}",
+                                     "{\"d\":{\"status\":\"offline\"}}",
                                      true);
         if (mqConnected) {
             Serial.println("MQ connected");
@@ -170,7 +170,7 @@ void iot_connect() {
     serializeJson(root, msgBuffer);
     Serial.printf("publishing device metadata: %s\n", msgBuffer);
     client.publish(metaTopic, msgBuffer, true);
-    client.publish(connTopic, "{\"status\":\"online\"}", true);
+    client.publish(connTopic, "{\"d\":{\"status\":\"online\"}}", true);
 }
 
 void update_progress(int cur, int total) {
