@@ -116,6 +116,21 @@ void set_iot_server() {
     client.setServer(iot_server, mqttPort);  // IOT
 }
 
+void pubMeta() {
+    JsonObject meta = cfg["meta"];
+    StaticJsonDocument<512> root;
+    JsonObject d = root.createNestedObject("d");
+    JsonObject metadata = d.createNestedObject("metadata");
+    for (JsonObject::iterator it = meta.begin(); it != meta.end(); ++it) {
+        metadata[it->key().c_str()] = it->value();
+    }
+    JsonObject supports = d.createNestedObject("supports");
+    supports["deviceActions"] = true;
+    serializeJson(root, msgBuffer);
+    Serial.printf("publishing device metadata: %s\n", msgBuffer);
+    client.publish(metaTopic, msgBuffer, true);
+}
+
 void iot_connect() {
     while (!client.connected()) {
         int mqConnected = 0;
@@ -158,18 +173,7 @@ void iot_connect() {
     if (!subscribeTopic(updateTopic)) return;
     if (!subscribeTopic(upgradeTopic)) return;
     if (!subscribeTopic(cmdTopic)) return;
-    JsonObject meta = cfg["meta"];
-    StaticJsonDocument<512> root;
-    JsonObject d = root.createNestedObject("d");
-    JsonObject metadata = d.createNestedObject("metadata");
-    for (JsonObject::iterator it = meta.begin(); it != meta.end(); ++it) {
-        metadata[it->key().c_str()] = it->value();
-    }
-    JsonObject supports = d.createNestedObject("supports");
-    supports["deviceActions"] = true;
-    serializeJson(root, msgBuffer);
-    Serial.printf("publishing device metadata: %s\n", msgBuffer);
-    client.publish(metaTopic, msgBuffer, true);
+    pubMeta();
     client.publish(connTopic, "{\"d\":{\"status\":\"online\"}}", true);
 }
 
@@ -204,6 +208,7 @@ void handleIOTCommand(char* topic, JsonDocument* root) {
                 save_config_json();
             }
         }
+        pubMeta();
         pubInterval = cfg["meta"]["pubInterval"];
     } else if (strstr(topic, upgradeTopic)) {
         JsonObject upgrade = d["upgrade"];
