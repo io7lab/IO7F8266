@@ -213,21 +213,16 @@ void handleIOTCommand(char* topic, JsonDocument* root) {
     } else if (strstr(topic, upgradeTopic)) {
         JsonObject upgrade = d["upgrade"];
         String response = "{\"OTA\":{\"status\":";
-        if (upgrade.containsKey("server") &&
-            upgrade.containsKey("port") &&
-            upgrade.containsKey("uri")) {
+        if (upgrade.containsKey("fw_url")) {
             Serial.println("firmware upgrading");
-            const char* fw_server = upgrade["server"];
-            int fw_server_port = atoi(upgrade["port"]);
-            const char* fw_uri = upgrade["uri"];
+            const char* fw_url = upgrade["fw_url"];
             ESPhttpUpdate.onProgress(update_progress);
             ESPhttpUpdate.onError(update_error);
             client.publish(logTopic, "{\"info\":{\"upgrade\":\"Device will be upgraded.\"}}");
-            t_httpUpdate_return ret = ESPhttpUpdate.update(wifiClient, fw_server, fw_server_port, fw_uri);
+            t_httpUpdate_return ret = ESPhttpUpdate.update(wifiClient, fw_url);
             switch (ret) {
                 case HTTP_UPDATE_FAILED:
-                    response += "\"[update] Update failed. http://" + String(fw_server);
-                    response += ":" + String(fw_server_port) + String(fw_uri) + "\"}}";
+                    response += "\"[update] Update failed. " + String(fw_url) + "\"}}";
                     client.publish(logTopic, (char*)response.c_str());
                     Serial.println(response);
                     break;
