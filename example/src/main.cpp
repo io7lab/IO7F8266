@@ -27,7 +27,15 @@ void publishData() {
     client.publish(evtTopic, msgBuffer);
 }
 
-void handleUserCommand(JsonDocument* root) {
+void handleUserMeta() {
+    // USER CODE EXAMPLE : meta data update
+    // If any meta data updated on the Internet, it can be stored to local variable to use for the logic
+    // in cfg["meta"]["XXXXX"], XXXXX should match to one in the user_html
+    customVar1 = cfg["meta"]["yourVar"];
+    // USER CODE EXAMPLE
+}
+
+void handleUserCommand(char* topic, JsonDocument* root) {
     JsonObject d = (*root)["d"];
 
     // USER CODE EXAMPLE : status/change update
@@ -41,28 +49,6 @@ void handleUserCommand(JsonDocument* root) {
         lastPublishMillis = -pubInterval;
     }
     // USER CODE EXAMPLE
-}
-
-void message(char* topic, byte* payload, unsigned int payloadLength) {
-    byte2buff(msgBuffer, payload, payloadLength);
-    StaticJsonDocument<512> root;
-    DeserializationError error = deserializeJson(root, String(msgBuffer));
-
-    if (error) {
-        Serial.println("handleCommand: payload parse FAILED");
-        return;
-    }
-
-    handleIOTCommand(topic, &root);
-    if (strstr(topic, "/device/update")) {
-        // USER CODE EXAMPLE : meta data update
-        // If any meta data updated on the Internet, it can be stored to local variable to use for the logic
-        // in cfg["meta"]["XXXXX"], XXXXX should match to one in the user_html
-        customVar1 = cfg["meta"]["yourVar"];
-        // USER CODE EXAMPLE
-    } else if (strstr(topic, "/cmd/")) {
-        handleUserCommand(&root);
-    }
 }
 
 void setup() {
@@ -88,7 +74,10 @@ void setup() {
     Serial.printf("\nIP address : ");
     Serial.println(WiFi.localIP());
 
-    client.setCallback(message);
+    // if there is any user Meta Data, implement the funtcion and assign it to userMeta
+    userMeta = handleUserMeta;
+    // if there is any user Command, implement the funtcion and assign it to userCommand
+    userCommand = handleUserCommand;
     set_iot_server();
     iot_connect();
 }

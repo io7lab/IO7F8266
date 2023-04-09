@@ -37,6 +37,10 @@ unsigned long       pubInterval;
 int                 mqttPort;
 char                fpFile[] = "/fingerprint.txt";
 
+void handleIOTCommand(char* topic, byte* payload, unsigned int payloadLength);
+void (*userCommand)(char* topic, JsonDocument* root) = NULL;
+void (*userMeta)() = NULL;
+
 bool subscribeTopic(const char* topic) {
     if (client.subscribe(topic)) {
         Serial.printf("Subscription to %s OK\n", topic);
@@ -102,6 +106,7 @@ void initDevice() {
 }
 
 void set_iot_server() {
+    client.setCallback(handleIOTCommand);
     if (mqttPort == 8883) {
         if (!wifiClientSecure.connect(iot_server, mqttPort)) {
             Serial.println("ssl connection failed");
@@ -185,8 +190,11 @@ void update_error(int err) {
     Serial.printf("CALLBACK:  HTTP update fatal error code %d\n", err);
 }
 
-void handleIOTCommand(char* topic, JsonDocument* root) {
-    JsonObject d = (*root)["d"];
+void handleIOTCommand(char* topic, byte* payload, unsigned int payloadLength) {
+    byte2buff(msgBuffer, payload, payloadLength);
+    StaticJsonDocument<512> root;
+    deserializeJson(root, String(msgBuffer));
+    JsonObject d = root["d"];
 
     if (strstr(topic, rebootTopic)) {  // rebooting
         reboot();
@@ -210,6 +218,9 @@ void handleIOTCommand(char* topic, JsonDocument* root) {
         }
         pubMeta();
         pubInterval = cfg["meta"]["pubInterval"];
+        if (userMeta) {
+            userMeta();
+        }
     } else if (strstr(topic, upgradeTopic)) {
         JsonObject upgrade = d["upgrade"];
         String response = "{\"OTA\":{\"status\":";
@@ -248,16 +259,8 @@ void handleIOTCommand(char* topic, JsonDocument* root) {
             cfg.remove("compile_date");
             String info = String("{\"config\":") + String(maskBuffer) + String("}");
             client.publish(logTopic, info.c_str());
+        } else if (userCommand) {
+            userCommand(topic, &root);
         }
     }
 }
-/* FW Upgrade informaiton
- * var evt1 = { 'd': {
- *   'upgrade' : {
- *       'server':'192.168.0.9',
- *       'port':'3000',
- *       'uri' : '/file/firmware.bin'
- *       }
- *   }
- * };
- */
