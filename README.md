@@ -68,7 +68,7 @@ void handleUserCommand(char* topic, JsonDocument* root) {
 
 void setup() {
     Serial.begin(115200);
-    // USER CODE EXAMPLE : meta data update
+    // USER CODE EXAMPLE : Initialization
     pinMode(RELAY, OUTPUT);
     // USER CODE EXAMPLE
 
