@@ -1,4 +1,4 @@
-# IO7 Foundation for ESP8266
+# IO7 Framework for ESP8266
 
 With this library, the developer can create an IO7 ESP8266 IOT device which
 1. helps configure with the Captive Portal if not configured as in the following picture,
