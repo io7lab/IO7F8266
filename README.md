@@ -144,7 +144,7 @@ lib_deps =
 	knolleary/PubSubClient@^2.8
 	bblanchon/ArduinoJson@^6.18.5
 	https://github.com/yhur/ConfigPortal8266
-	https://github.com/yhur/IO7F8266
+	https://github.com/io7lab/IO7F8266
  ```
 
 ### More Info.
