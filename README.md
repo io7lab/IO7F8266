@@ -7,7 +7,7 @@ With this library, the developer can create an IO7 ESP8266 IOT device which
 2. or boots with the stored configuration if configured already,
 3. connects to the WiFi/IO7 IOT Platform and run the loop function
 
-![Untitled](https://user-images.githubusercontent.com/13171662/221724691-8d1c93be-c4d2-4ad9-8bcf-24bda369efe4.jpg)
+<img width="590" height="812" alt="image" src="https://github.com/user-attachments/assets/2af1fc32-2752-4335-bfd9-184adecd8472" />
 
 # How to use the IO7F8266
 You can create a PlatformIO project with the example directory and modify the src/main.cpp for your purpose and build it.
