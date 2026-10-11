@@ -5,6 +5,7 @@
 #include <ESP8266httpUpdate.h>
 #include <PubSubClient.h>
 #include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 
 const char compile_date[] = __DATE__ " " __TIME__;
 char cmdTopic[200]      = "iot3/%s/cmd/+/fmt/+";
@@ -17,17 +18,69 @@ char rebootTopic[200]   = "iot3/%s/mgmt/initiate/device/reboot";
 char resetTopic[200]    = "iot3/%s/mgmt/initiate/device/factory_reset";
 char upgradeTopic[200]  = "iot3/%s/mgmt/initiate/firmware/update";
 
-String user_config_html =
-    ""
+String user_config_html = ""
     "<p><input type='text' name='broker' placeholder='Broker'>"
+    "<style>"
+    "  input[type='checkbox'] {"
+    "    width: 40px;"
+    "    height: 40px;"
+    "    cursor: pointer;"
+    "    margin-left: 20px;"
+    "    vertical-align: middle;"
+    "  }"
+    "  .ssl-container {"
+    "    background-color: #f0f0f0;"
+    "    padding: 20px;"
+    "    margin: 20px auto;"
+    "    width: 90%;"
+    "    border-radius: 0.3rem;"
+    "    border: 2px solid #1fa3ec;"
+    "  }"
+    "</style>"
+    "<div style='margin-left:50px; font-family:Arial; font-size:3em; color:rgb(175,175,175)'>"
+    "   Use SSL : <input type='checkbox' name='ssl' value='true'/>"
+    "</div>"
     "<p><input type='text' name='devId' placeholder='Device Id'>"
     "<p><input type='text' name='token' placeholder='Device Token'>"
-    "<p><input type='text' name='fingerprint' placeholder='No TLS' value='%s'>"
     "<p><input type='text' name='meta.pubInterval' placeholder='Publish Interval'>";
+
+String cert_html = ""
+    "<html><head><title>MQTT Server Certificate</title></head><body>"
+        "<style>"
+            "input {font-size:3em; width:90%%; text-align:center;}"
+            "textarea {font-size:1em; width:90%%; text-align:left; height:10em;}"
+            "button { border:0;border-radius:0.3rem;background-color:#1fa3ec;"
+            "color:#fff; line-height:2em;font-size:3em;width:90%%;}"
+        "</style>"
+        "<center><h1>Certificate</h1>%s"
+        "<form action='/cert_save' method='post' enctype='multipart/form-data'>"
+            "<p><textarea type='text' name='cert' placeholder=\"Default Let's Encrypt certificate\">%s</textarea>"
+            "<p><button type='submit'>Save</button>"
+        "</form></center>"
+    "</body></html>";
+
+String cert_error_html = ""
+    "<html><head><title>Certificate Not Saved</title></head><body><center>"
+        "<h1>The pasted text is not a valid certificate</h1>"
+        "<p>It did not parse as a PEM X.509 certificate. Check that every"
+        " -----BEGIN CERTIFICATE----- block is complete with its -----END"
+        " CERTIFICATE----- line.</p>"
+        "<p><button type='button' onclick=\"location.href='/check_ssl'\">Back to the certificate page</button></p>"
+    "</center></body></html>";
+
+String cert_default_html = ""
+    "<html><head><title>Certificate Cleared</title></head><body><center>"
+        "<h5>Stored certificate removed</h5>"
+        "<h5>The default Let's Encrypt certificate will be used</h5>"
+        "<p><button type='button' onclick=\"location.href='/reboot'\">Reboot</button>"
+    "</center></body></html>";
+
+String new_redirect_html = ""
+    "<html><head><meta http-equiv='refresh' content='0; URL=/check_ssl' /></head>"
+    "<body><p>Redirecting</body></html>";
 
 extern String       user_html;
 
-ESP8266WebServer    server(80);
 WiFiClientSecure    wifiClientSecure;
 WiFiClient          wifiClient;
 PubSubClient        client;
@@ -35,7 +88,26 @@ char                iot_server[100];
 char                msgBuffer[JSON_CHAR_LENGTH];
 unsigned long       pubInterval;
 int                 mqttPort;
-char                fpFile[] = "/fingerprint.txt";
+
+char                caFile[] = "/ca.pem";
+String              ca = ""
+   "-----BEGIN CERTIFICATE-----\n"
+   "MIICjDCCAhGgAwIBAgIQTfOxXdbAeExQfNN7WObxFTAKBggqhkjOPQQDAzAuMQsw\n"
+   "CQYDVQQGEwJVUzENMAsGA1UEChMESVNSRzEQMA4GA1UEAxMHUm9vdCBZRTAeFw0y\n"
+   "NTA5MDMwMDAwMDBaFw0yODA5MDIyMzU5NTlaMDMxCzAJBgNVBAYTAlVTMRYwFAYD\n"
+   "VQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTIwdjAQBgcqhkjOPQIBBgUr\n"
+   "gQQAIgNiAARxmrQzkdbEEL3MqXt3dJQttYc47axkdDTHud5TPqM2z5uSD5cmk0Wr\n"
+   "HlWXvnlvqBLqiB34kluxIbmMyAiq3/YD6e80/vV259K8XQIdjFXloYOa0mIU71f7\n"
+   "HQ09PvYDlw+jge4wgeswDgYDVR0PAQH/BAQDAgGGMBMGA1UdJQQMMAoGCCsGAQUF\n"
+   "BwMBMBIGA1UdEwEB/wQIMAYBAf8CAQAwHQYDVR0OBBYEFLlZ8o7PIvCG0zdI/3YU\n"
+   "GLqC2FWHMB8GA1UdIwQYMBaAFKPIJlqOoUzQNWP8myPIOq5W809WMDIGCCsGAQUF\n"
+   "BwEBBCYwJDAiBggrBgEFBQcwAoYWaHR0cDovL3llLmkubGVuY3Iub3JnLzATBgNV\n"
+   "HSAEDDAKMAgGBmeBDAECATAnBgNVHR8EIDAeMBygGqAYhhZodHRwOi8veWUuYy5s\n"
+   "ZW5jci5vcmcvMAoGCCqGSM49BAMDA2kAMGYCMQDIcnw5dcZLN9ffynXnnkLD/itS\n"
+   "JEycJPb3sRkzeqBowup7vOsAwaqoCnNn/jh9wycCMQCJM6CPlaOC4pQYYbJtVPYb\n"
+   "DKrIb2EKk5NpOpE6/XttQYZV/3gilB9l+Cc/DOVwmyg=\n"
+   "-----END CERTIFICATE-----\n";
+BearSSL::X509List*  x509Trust = nullptr;
 
 void handleIOTCommand(char* topic, byte* payload, unsigned int payloadLength);
 void (*userCommand)(char* topic, JsonDocument* root) = NULL;
@@ -59,31 +131,70 @@ void setDevId(char* topic, const char* devId) {
 
 void initDevice() {
     loadConfig();
-    String fingerprint;
-    if (cfg.containsKey("fingerprint")) {
-        fingerprint = (const char*)cfg["fingerprint"];
-        fingerprint.trim();
-        cfg.remove("fingerprint");
-        save_config_json();
-        File f = LittleFS.open(fpFile, "w");
-        f.write(fingerprint.c_str());
+    if (LittleFS.exists(caFile)) {
+        File f = LittleFS.open(caFile, "r");
+        String stored = f.readString();
+        stored.trim();
         f.close();
-    } else {
-        if (LittleFS.exists(fpFile)) {
-            File f = LittleFS.open(fpFile, "r");
-            fingerprint = f.readString();
-            fingerprint.trim();
-            f.close();
+        BearSSL::X509List storedList(stored.c_str());  // validate before trusting
+        if (storedList.getCount() > 0) {
+            ca = stored;
+        } else {
+            Serial.println("/ca.pem does not parse as a certificate: keeping the built-in default CA");
         }
     }
 
     if (!cfg.containsKey("config") || strcmp((const char*)cfg["config"], "done")) {
-        char buf[1000];
-        sprintf(buf, user_config_html.c_str(), fingerprint.c_str());
-        user_config_html = buf + user_html;
+// MODIFY HERE FOR CERTIFICATE
+        user_config_html = user_config_html + user_html;
+        webServer.on("/check_ssl", [](){
+            if (cfg.containsKey("ssl") &&  strcmp((const char*)cfg["ssl"], "true") == 0) {
+                const char* note = LittleFS.exists(caFile)
+                    ? "<p>Storing a user certificate. Clear the field and press Save to revert to the default.</p>"
+                    : "<p>No user certificate stored. The default Let's Encrypt certificate will be used.</p>";
+                String prefill = LittleFS.exists(caFile) ? ca : "";
+                // the CA may be a multi-certificate chain of several KB: size
+                // the page buffer on the heap, a stack buffer would overflow
+                char* page = new (std::nothrow) char[cert_html.length() + ca.length() + 200];
+                if (page) {
+                    sprintf(page, cert_html.c_str(), note, prefill.c_str());
+                    webServer.send(200, "text/html", page);
+                    delete[] page;
+                }
+            } else {
+                webServer.send(200, "text/html", postSave_html);
+            }
+        });
+        webServer.on("/cert_save", HTTP_POST, [](){
+            String pasted = webServer.arg("cert");
+            pasted.trim();
+            if (pasted.length() == 0) {
+                // empty field: revert to the built-in default
+                LittleFS.remove(caFile);
+                ca = "";
+                webServer.send(200, "text/html", cert_default_html);
+            } else {
+                // a paste must parse as PEM X.509 or it is refused
+                BearSSL::X509List pastedList(pasted.c_str());
+                if (pastedList.getCount() > 0) {
+                    File out = LittleFS.open(caFile, "w");
+                    out.print(pasted);
+                    out.close();
+                    ca = pasted;
+                    webServer.send(200, "text/html", postSave_html);
+                } else {
+                    webServer.send(200, "text/html", cert_error_html);
+                }
+            }
+        });
+        redirect_html = new_redirect_html;
         configDevice();
     } else {
         const char* devId = (const char*)cfg["devId"];
+        const char* ssl = "false";
+        if (cfg.containsKey("ssl")) {
+            ssl = (const char*)cfg["ssl"];
+        }
         setDevId(evtTopic, devId);
         setDevId(logTopic, devId);
         setDevId(connTopic, devId);
@@ -94,22 +205,53 @@ void initDevice() {
         setDevId(resetTopic, devId);
         setDevId(upgradeTopic, devId);
         sprintf(iot_server, "%s", (const char*)cfg["broker"]);
-        if (fingerprint.length() > 0) {
-            wifiClientSecure.setFingerprint(fingerprint.c_str());
+        if (strcmp(ssl, "true") == 0) {
+            x509Trust = new BearSSL::X509List(ca.c_str());
+            wifiClientSecure.setTrustAnchors(x509Trust);
+            ca = "";  // the X509List holds its own parsed copy: free the PEM string
             client.setClient(wifiClientSecure);
             mqttPort = 8883;
         } else {
             client.setClient(wifiClient);
             mqttPort = 1883;
         }
+        // a configured device never shows the portal again: free the portal HTML
+        user_config_html = "";
+        cert_html = "";
+        cert_error_html = "";
+        cert_default_html = "";
+        new_redirect_html = "";
     }
 }
 
 void set_iot_server() {
     client.setCallback(handleIOTCommand);
     if (mqttPort == 8883) {
+        // X.509 validation checks the certificate validity dates, and the
+        // BearSSL validator defaults to the epoch (1970) until the device
+        // time is set: without it every certificate fails as "expired or
+        // not yet valid". Sync the time from NTP (best effort, up to 10 s)
+        // and hand it to BearSSL before the handshake.
+        if (time(nullptr) < 1600000000) {  // not yet synced (before Sep 2020)
+            configTime(0, 0, "pool.ntp.org");
+            for (int i = 0; i < 20 && time(nullptr) < 1600000000; i++) {
+                delay(500);
+            }
+        }
+        wifiClientSecure.setX509Time(time(nullptr));
+        // Keep the TLS record buffers small so the handshake fits in the ESP8266
+        // heap. If the broker supports MFLN (RFC 6066) 4096 bytes is negotiated
+        // explicitly; otherwise fall back to half the default, which the old
+        // fingerprint-based build coped with.
+        if (wifiClientSecure.probeMaxFragmentLength(iot_server, mqttPort, 4096)) {
+            wifiClientSecure.setBufferSizes(4096, 512);
+        } else {
+            wifiClientSecure.setBufferSizes(8192, 512);
+        }
         if (!wifiClientSecure.connect(iot_server, mqttPort)) {
-            Serial.println("ssl connection failed");
+            char errBuffer[64];
+            int err = wifiClientSecure.getLastSSLError(errBuffer, sizeof(errBuffer));
+            Serial.printf("ssl connection failed RC=%d: %s\n", err, errBuffer);
             return;
         }
     } else {

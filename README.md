@@ -131,6 +131,41 @@ In the functions.
 ```
 
 
+## SSL/TLS (full X.509 certificate validation)
+Since the version 0.2.0, the library validates the TLS connection to the MQTT broker with a full
+X.509 CA certificate (BearSSL) instead of the certificate fingerprint. This works the same way as
+the IO7F32 (ESP32) library.
+
+On the config portal, check the **Use SSL** box and save. If SSL is enabled, the portal redirects
+to the **Certificate** page (`/check_ssl`) where you can paste the CA certificate in PEM format.
+- The certificate is stored as `/ca.pem` in the LittleFS.
+- If no certificate is entered (or the field is emptied and saved), the built-in default
+  Let's Encrypt intermediate (YE2) is used, so Let's Encrypt-signed brokers work out of the
+  box. Brokers signed by any other CA (another LE intermediate, VeriSign, a private CA …)
+  need that issuer's certificate pasted here once.
+- With SSL enabled the broker is contacted on port 8883, otherwise on plain 1883.
+- The TLS record buffers are kept small so the handshake fits the ESP8266 RAM: 4096 bytes if the
+  broker supports MFLN (maximum fragment length negotiation), 8192 bytes otherwise. If your
+  broker sends a longer certificate chain than these can hold, the handshake fails with
+  `ssl connection failed RC=...` on the Serial monitor (it retries every 5 seconds instead of
+  crashing); raise the sizes from the sketch with
+  `wifiClientSecure.setBufferSizes(16384, 512);` before the first connection attempt on boards
+  with more RAM.
+
+Notes and known behaviors (same as IO7F32):
+- The SSL check box only writes `ssl=true` when it is checked. Because the portal saves only the
+  submitted fields, unchecking it does not clear a previously saved `ssl=true`; use the factory
+  reset / reconfiguration flow to turn SSL off.
+- Certificate validity (notBefore/notAfter) **is enforced**: before the SSL handshake the device
+  syncs its clock from NTP (pool.ntp.org, up to ~10 s) and hands the time to BearSSL. Without
+  NTP access the handshake fails with `RC=... Certificate is expired or not yet valid.` and
+  retries every 5 seconds.
+- Devices configured with an older (0.1.x) fingerprint-based version fall back to plain MQTT on
+  port 1883 on the first boot with this version, until they are reconfigured with the SSL
+  check box. The fingerprint cannot be converted to a CA certificate, so there is no automatic
+  migration.
+
+
 ## dependancy and tips
 This library uses LittleFS instead of SPIFFS, and needs PubSubClient, ArduinoJson, ConfigPortal8266.
 
